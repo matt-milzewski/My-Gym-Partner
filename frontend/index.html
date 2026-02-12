@@ -14,6 +14,7 @@
         <label for="exerciseInput">Exercise</label>
         <input id="exerciseInput" list="exerciseSuggestions" placeholder="e.g. Bench Press" autocomplete="off" />
         <datalist id="exerciseSuggestions"></datalist>
+        <div id="exerciseQuickPicks" class="quick-picks" aria-label="Recent exercises"></div>
       </section>
 
       <nav class="tabs">
@@ -26,10 +27,16 @@
           <label for="workoutDate">Date</label>
           <input id="workoutDate" type="date" required />
 
+          <div class="quick-actions">
+            <button id="reuseLastBtn" type="button">Reuse last session</button>
+            <button id="copyLastSetBtn" type="button">Copy last set</button>
+            <button id="clearSetsBtn" type="button">Clear sets</button>
+          </div>
+
           <div class="section-title">Sets</div>
           <div id="setsContainer"></div>
 
-          <div class="actions">
+          <div class="actions sticky-actions">
             <button id="addSetBtn" type="button">Add set</button>
             <button type="submit">Save session</button>
           </div>
