@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Bootstrap for GitHub Actions OIDC deployment role
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Description: GitHub organization or username
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository name
+  RoleName:
+    Type: String
+    Default: GymTrackerGitHubActionsRole
+    Description: IAM role name assumed by GitHub Actions
+  CreateOidcProvider:
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: Set to false if GitHub OIDC provider already exists in this account
+  ExistingOidcProviderArn:
+    Type: String
+    Default: ''
+    Description: Existing OIDC provider ARN when CreateOidcProvider is false
+
+Rules:
+  ExistingOidcProviderArnRequired:
+    RuleCondition: !Equals [!Ref CreateOidcProvider, 'false']
+    Assertions:
+      - Assert: !Not [!Equals [!Ref ExistingOidcProviderArn, '']]
+        AssertDescription: ExistingOidcProviderArn must be provided when CreateOidcProvider is false.
+
+Conditions:
+  ShouldCreateOidcProvider: !Equals [!Ref CreateOidcProvider, 'true']
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - ShouldCreateOidcProvider
+                - !Ref GitHubOidcProvider
+                - !Ref ExistingOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${GitHubRepo}:*
+      Policies:
+        - PolicyName: GymTrackerDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:*
+                  - iam:PassRole
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - lambda:*
+                  - apigateway:*
+                  - dynamodb:*
+                  - s3:*
+                  - cloudfront:*
+                  - logs:*
+                  - sts:GetCallerIdentity
+                Resource: '*'
+
+Outputs:
+  GitHubActionsRoleArn:
+    Description: IAM role ARN for GitHub Actions OIDC
+    Value: !GetAtt GitHubActionsDeployRole.Arn
+  OidcProviderArn:
+    Description: ARN of GitHub OIDC provider in use
+    Value: !If
+      - ShouldCreateOidcProvider
+      - !Ref GitHubOidcProvider
+      - !Ref ExistingOidcProviderArn

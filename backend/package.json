@@ -1,0 +1,13 @@
+{
+  "name": "gym-workout-tracker-backend",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/handler.js",
+  "scripts": {
+    "build": "mkdir -p dist && rm -f dist/backend.zip && zip -r dist/backend.zip src package.json package-lock.json node_modules"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.883.0",
+    "@aws-sdk/lib-dynamodb": "^3.883.0"
+  }
+}

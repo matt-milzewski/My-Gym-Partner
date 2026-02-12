@@ -1,0 +1,104 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      STACK_NAME: ${{ secrets.STACK_NAME }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install backend deps
+        run: npm ci --prefix backend
+
+      - name: Build backend zip
+        run: npm run build --prefix backend
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+
+      - name: Upload backend artifact
+        run: |
+          set -euo pipefail
+
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          DEPLOY_BUCKET="${STACK_NAME}-deploy-${ACCOUNT_ID}-${AWS_REGION}"
+
+          if ! aws s3api head-bucket --bucket "$DEPLOY_BUCKET" >/dev/null 2>&1; then
+            aws s3api create-bucket \
+              --bucket "$DEPLOY_BUCKET" \
+              --region "$AWS_REGION" \
+              --create-bucket-configuration "LocationConstraint=$AWS_REGION"
+          fi
+
+          BACKEND_KEY="backend/${GITHUB_SHA}.zip"
+          aws s3 cp backend/dist/backend.zip "s3://${DEPLOY_BUCKET}/${BACKEND_KEY}"
+
+          echo "DEPLOY_BUCKET=$DEPLOY_BUCKET" >> "$GITHUB_ENV"
+          echo "BACKEND_KEY=$BACKEND_KEY" >> "$GITHUB_ENV"
+
+      - name: Deploy CloudFormation stack
+        run: |
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file infra/main.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --region "$AWS_REGION" \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              LambdaCodeS3Bucket="$DEPLOY_BUCKET" \
+              LambdaCodeS3Key="$BACKEND_KEY"
+
+      - name: Read stack outputs
+        run: |
+          set -euo pipefail
+
+          SITE_BUCKET_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='SiteBucketName'].OutputValue | [0]" --output text)"
+          API_BASE_URL="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='ApiBaseUrl'].OutputValue | [0]" --output text)"
+          CLOUDFRONT_DISTRIBUTION_ID="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue | [0]" --output text)"
+
+          echo "SITE_BUCKET_NAME=$SITE_BUCKET_NAME" >> "$GITHUB_ENV"
+          echo "API_BASE_URL=$API_BASE_URL" >> "$GITHUB_ENV"
+          echo "CLOUDFRONT_DISTRIBUTION_ID=$CLOUDFRONT_DISTRIBUTION_ID" >> "$GITHUB_ENV"
+
+          echo "CloudFront Distribution: $CLOUDFRONT_DISTRIBUTION_ID"
+
+      - name: Generate frontend config.json
+        run: |
+          cat > frontend/config.json <<EOF_CONFIG
+          {
+            "apiBaseUrl": "${API_BASE_URL}"
+          }
+          EOF_CONFIG
+
+      - name: Upload frontend to S3
+        run: |
+          aws s3 sync frontend/ "s3://${SITE_BUCKET_NAME}" --delete
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --paths '/*'

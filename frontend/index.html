@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gym Workout Tracker</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>Gym Workout Tracker</h1>
+
+      <section class="panel">
+        <label for="exerciseInput">Exercise</label>
+        <input id="exerciseInput" list="exerciseSuggestions" placeholder="e.g. Bench Press" autocomplete="off" />
+        <datalist id="exerciseSuggestions"></datalist>
+      </section>
+
+      <nav class="tabs">
+        <button class="tab active" data-tab="logSection" type="button">Log</button>
+        <button class="tab" data-tab="historySection" type="button">History + Stats</button>
+      </nav>
+
+      <section id="logSection" class="panel tab-panel active">
+        <form id="workoutForm">
+          <label for="workoutDate">Date</label>
+          <input id="workoutDate" type="date" required />
+
+          <div class="section-title">Sets</div>
+          <div id="setsContainer"></div>
+
+          <div class="actions">
+            <button id="addSetBtn" type="button">Add set</button>
+            <button type="submit">Save session</button>
+          </div>
+
+          <p id="formMessage" class="message" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section id="historySection" class="panel tab-panel">
+        <div id="latestSession" class="block"></div>
+        <div id="stats" class="block"></div>
+
+        <h2>History</h2>
+        <ul id="historyList" class="history-list"></ul>
+      </section>
+    </main>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
