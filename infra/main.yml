@@ -33,7 +33,6 @@ Resources:
   WorkoutLogsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: WorkoutLogs
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: pk
@@ -49,7 +48,6 @@ Resources:
   ExercisesTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: Exercises
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: pk
@@ -98,7 +96,6 @@ Resources:
   ApiHandlerFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub ${AWS::StackName}-api-handler
       Runtime: nodejs20.x
       Handler: src/handler.handler
       Role: !GetAtt ApiHandlerRole.Arn
