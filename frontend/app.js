@@ -1,17 +1,74 @@
 'use strict';
 
 const DRAFT_STORAGE_KEY = 'gym-tracker-draft-v1';
+const ROUTINES_STORAGE_KEY = 'gym-tracker-routines-v1';
+
+const DEFAULT_ROUTINES = [
+  {
+    id: 'day-1-push',
+    name: 'Day 1 - Push',
+    exercises: [
+      'Barbell Bench Press',
+      'Incline Dumbbell Press',
+      'Seated Dumbbell Shoulder Press',
+      'Cable or Dumbbell Lateral Raises',
+      'Tricep Pushdowns',
+      'Overhead Tricep Extensions',
+      'Push-ups (Finisher)'
+    ]
+  },
+  {
+    id: 'day-2-pull',
+    name: 'Day 2 - Pull',
+    exercises: [
+      'Lat Pulldown or Assisted Pull-ups',
+      'Barbell or Dumbbell Rows',
+      'Seated Cable Row',
+      'Face Pulls',
+      'Dumbbell Bicep Curls',
+      'Hammer Curls'
+    ]
+  },
+  {
+    id: 'day-3-legs',
+    name: 'Day 3 - Legs',
+    exercises: ['Barbell Back Squats', 'Leg Press', 'Walking Lunges', 'Leg Extensions', 'Standing Calf Raises']
+  },
+  {
+    id: 'day-4-upper',
+    name: 'Day 4 - Upper',
+    exercises: [
+      'Incline Barbell or Machine Press',
+      'Chest Supported Row',
+      'Dumbbell Lateral Raises',
+      'Rear Delt Fly (machine or dumbbell)',
+      'Cable Chest Fly',
+      'EZ Bar Curls',
+      'Tricep Pushdowns'
+    ]
+  },
+  {
+    id: 'day-5-lower',
+    name: 'Day 5 - Lower',
+    exercises: [
+      'Romanian Deadlifts',
+      'Hip Thrusts or Barbell Glute Bridges',
+      'Hamstring Curls',
+      'Bulgarian Split Squats',
+      'Seated Calf Raises'
+    ]
+  }
+];
 
 const state = {
   apiBaseUrl: '',
-  exercises: [],
-  currentLatest: null
+  currentLatest: null,
+  routines: []
 };
 
 const elements = {
-  exerciseInput: document.getElementById('exerciseInput'),
-  exerciseSuggestions: document.getElementById('exerciseSuggestions'),
-  exerciseQuickPicks: document.getElementById('exerciseQuickPicks'),
+  routineSelect: document.getElementById('routineSelect'),
+  exerciseSelect: document.getElementById('exerciseSelect'),
   workoutDate: document.getElementById('workoutDate'),
   workoutForm: document.getElementById('workoutForm'),
   setsContainer: document.getElementById('setsContainer'),
@@ -23,6 +80,14 @@ const elements = {
   latestSession: document.getElementById('latestSession'),
   stats: document.getElementById('stats'),
   historyList: document.getElementById('historyList'),
+  routineEditorSelect: document.getElementById('routineEditorSelect'),
+  routineNameInput: document.getElementById('routineNameInput'),
+  routineExercisesInput: document.getElementById('routineExercisesInput'),
+  saveRoutineBtn: document.getElementById('saveRoutineBtn'),
+  addRoutineBtn: document.getElementById('addRoutineBtn'),
+  deleteRoutineBtn: document.getElementById('deleteRoutineBtn'),
+  resetRoutinesBtn: document.getElementById('resetRoutinesBtn'),
+  routineMessage: document.getElementById('routineMessage'),
   tabs: document.querySelectorAll('.tab'),
   tabPanels: document.querySelectorAll('.tab-panel')
 };
@@ -34,6 +99,10 @@ init().catch((error) => {
 
 async function init() {
   elements.workoutDate.value = formatLocalDate(new Date());
+
+  state.routines = loadRoutines();
+  renderRoutineSelects();
+
   resetSetRows();
   restoreDraft();
   updateQuickActionState();
@@ -45,20 +114,35 @@ async function init() {
   elements.workoutForm.addEventListener('submit', onSubmitWorkout);
   elements.workoutForm.addEventListener('input', saveDraft);
   elements.workoutDate.addEventListener('change', saveDraft);
-  elements.exerciseInput.addEventListener('change', onExerciseChange);
-  elements.exerciseInput.addEventListener('blur', onExerciseChange);
-  elements.exerciseInput.addEventListener('input', saveDraft);
+
+  elements.routineSelect.addEventListener('change', () => {
+    onRoutineChange().catch((error) => {
+      console.error(error);
+      setFormMessage(error.message || 'Failed to switch workout.', 'error');
+    });
+  });
+
+  elements.exerciseSelect.addEventListener('change', () => {
+    onExerciseChange().catch((error) => {
+      console.error(error);
+      setFormMessage(error.message || 'Failed to load exercise.', 'error');
+    });
+  });
+
+  elements.routineEditorSelect.addEventListener('change', onRoutineEditorChange);
+  elements.saveRoutineBtn.addEventListener('click', onSaveRoutine);
+  elements.addRoutineBtn.addEventListener('click', onAddRoutine);
+  elements.deleteRoutineBtn.addEventListener('click', onDeleteRoutine);
+  elements.resetRoutinesBtn.addEventListener('click', onResetRoutines);
 
   elements.tabs.forEach((tab) => {
     tab.addEventListener('click', () => setActiveTab(tab.dataset.tab));
   });
 
   await loadConfig();
-  await loadExercises();
 
-  const initialExercise = elements.exerciseInput.value.trim();
-  if (initialExercise) {
-    await refreshExerciseViews(initialExercise);
+  if (elements.exerciseSelect.value) {
+    await refreshExerciseViews(elements.exerciseSelect.value);
   }
 }
 
@@ -78,59 +162,70 @@ async function loadConfig() {
   state.apiBaseUrl = apiBaseUrl;
 }
 
-async function loadExercises() {
-  const data = await apiFetch('/exercises');
-  state.exercises = Array.isArray(data.items) ? data.items : [];
+function renderRoutineSelects(preferredLogRoutineId = '', preferredExerciseName = '', preferredEditorRoutineId = '') {
+  if (!state.routines.length) {
+    state.routines = cloneDefaultRoutines();
+  }
 
-  renderExerciseSuggestions();
-  renderExerciseQuickPicks();
-}
+  const logFallbackId = state.routines[0].id;
+  const editorFallbackId = state.routines[0].id;
 
-function renderExerciseSuggestions() {
-  elements.exerciseSuggestions.innerHTML = state.exercises
-    .map((exercise) => `<option value="${escapeHtml(exercise.exerciseName)}"></option>`)
+  const logCurrentId = preferredLogRoutineId || elements.routineSelect.value || logFallbackId;
+  const editorCurrentId = preferredEditorRoutineId || elements.routineEditorSelect.value || editorFallbackId;
+
+  const optionHtml = state.routines
+    .map((routine) => `<option value="${escapeAttribute(routine.id)}">${escapeHtml(routine.name)}</option>`)
     .join('');
+
+  elements.routineSelect.innerHTML = optionHtml;
+  elements.routineEditorSelect.innerHTML = optionHtml;
+
+  const selectedLogRoutine = getRoutineById(logCurrentId) ? logCurrentId : logFallbackId;
+  elements.routineSelect.value = selectedLogRoutine;
+  renderExerciseOptions(preferredExerciseName);
+
+  const selectedEditorRoutine = getRoutineById(editorCurrentId) ? editorCurrentId : editorFallbackId;
+  elements.routineEditorSelect.value = selectedEditorRoutine;
+  populateRoutineEditor(selectedEditorRoutine);
 }
 
-function renderExerciseQuickPicks() {
-  if (!state.exercises.length) {
-    elements.exerciseQuickPicks.innerHTML = '<p class="meta">Recent exercises will appear here.</p>';
+function renderExerciseOptions(preferredExerciseName = '') {
+  const routine = getRoutineById(elements.routineSelect.value);
+
+  if (!routine || !routine.exercises.length) {
+    elements.exerciseSelect.innerHTML = '<option value="">No exercises available</option>';
+    elements.exerciseSelect.disabled = true;
     return;
   }
 
-  const recentExercises = [...state.exercises]
-    .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
-    .slice(0, 6);
+  elements.exerciseSelect.disabled = false;
 
-  elements.exerciseQuickPicks.innerHTML = recentExercises
-    .map(
-      (exercise) =>
-        `<button type="button" class="chip" data-exercise="${escapeAttribute(exercise.exerciseName)}">${escapeHtml(
-          exercise.exerciseName
-        )}</button>`
-    )
+  const optionHtml = routine.exercises
+    .map((exercise) => `<option value="${escapeAttribute(exercise)}">${escapeHtml(exercise)}</option>`)
     .join('');
 
-  [...elements.exerciseQuickPicks.querySelectorAll('.chip')].forEach((button) => {
-    button.addEventListener('click', async () => {
-      const exerciseName = button.dataset.exercise || '';
-      if (!exerciseName) {
-        return;
-      }
+  elements.exerciseSelect.innerHTML = optionHtml;
 
-      elements.exerciseInput.value = exerciseName;
-      setActiveTab('logSection');
-      saveDraft();
-      await onExerciseChange();
-    });
-  });
+  const currentExercise = preferredExerciseName || elements.exerciseSelect.value;
+  const matchedExercise = findExerciseMatch(routine.exercises, currentExercise);
+  elements.exerciseSelect.value = matchedExercise || routine.exercises[0];
+}
+
+async function onRoutineChange() {
+  renderExerciseOptions();
+  saveDraft();
+  setFormMessage('', '');
+
+  if (state.apiBaseUrl) {
+    await onExerciseChange();
+  }
 }
 
 async function onExerciseChange() {
-  const exerciseName = elements.exerciseInput.value.trim();
+  const exerciseName = elements.exerciseSelect.value.trim();
   saveDraft();
 
-  if (!exerciseName) {
+  if (!exerciseName || !state.apiBaseUrl) {
     state.currentLatest = null;
     updateQuickActionState();
     renderLatest(null);
@@ -240,11 +335,11 @@ async function onSubmitWorkout(event) {
   event.preventDefault();
   setFormMessage('', '');
 
-  const exerciseName = elements.exerciseInput.value.trim();
+  const exerciseName = elements.exerciseSelect.value.trim();
   const workoutDate = elements.workoutDate.value || formatLocalDate(new Date());
 
   if (!exerciseName) {
-    setFormMessage('Exercise name is required.', 'error');
+    setFormMessage('Select an exercise.', 'error');
     return;
   }
 
@@ -263,13 +358,10 @@ async function onSubmitWorkout(event) {
       body: JSON.stringify({ workoutDate, exerciseName, sets })
     });
 
-    await loadExercises();
     await refreshExerciseViews(exerciseName);
     resetSetRows();
     setFormMessage('Workout saved.', 'success');
     setActiveTab('logSection');
-    elements.exerciseInput.focus();
-    elements.exerciseInput.select();
     clearDraft();
     saveDraft();
   } catch (error) {
@@ -417,6 +509,306 @@ function hasAnySetInput(rows = getSetRows()) {
   });
 }
 
+function onRoutineEditorChange() {
+  populateRoutineEditor(elements.routineEditorSelect.value);
+  setRoutineMessage('', '');
+}
+
+function onSaveRoutine() {
+  const routineId = elements.routineEditorSelect.value;
+  const routine = getRoutineById(routineId);
+
+  if (!routine) {
+    setRoutineMessage('Select a workout to edit.', 'error');
+    return;
+  }
+
+  const routineName = sanitizeRoutineName(elements.routineNameInput.value);
+  const exercises = parseExerciseList(elements.routineExercisesInput.value);
+
+  if (!routineName) {
+    setRoutineMessage('Workout name is required.', 'error');
+    return;
+  }
+
+  if (!exercises.length) {
+    setRoutineMessage('Add at least one exercise.', 'error');
+    return;
+  }
+
+  const duplicateName = state.routines.some(
+    (item) => item.id !== routineId && normalizeKey(item.name) === normalizeKey(routineName)
+  );
+
+  if (duplicateName) {
+    setRoutineMessage('Workout name must be unique.', 'error');
+    return;
+  }
+
+  routine.name = routineName;
+  routine.exercises = exercises;
+
+  persistRoutines();
+
+  const selectedLogRoutine = elements.routineSelect.value;
+  const selectedExercise = elements.exerciseSelect.value;
+  const nextExercise =
+    selectedLogRoutine === routineId && !findExerciseMatch(exercises, selectedExercise)
+      ? exercises[0]
+      : selectedExercise;
+
+  renderRoutineSelects(selectedLogRoutine, nextExercise, routineId);
+  saveDraft();
+
+  if (state.apiBaseUrl && elements.exerciseSelect.value) {
+    onExerciseChange().catch((error) => {
+      console.error(error);
+      setFormMessage(error.message || 'Failed to refresh exercise view.', 'error');
+    });
+  }
+
+  setRoutineMessage('Workout saved.', 'success');
+}
+
+function onAddRoutine() {
+  const usedIds = new Set(state.routines.map((routine) => routine.id));
+  let number = state.routines.length + 1;
+  let nameCandidate = `Workout ${number}`;
+
+  while (state.routines.some((routine) => normalizeKey(routine.name) === normalizeKey(nameCandidate))) {
+    number += 1;
+    nameCandidate = `Workout ${number}`;
+  }
+
+  const newRoutine = {
+    id: buildRoutineId(nameCandidate, usedIds),
+    name: nameCandidate,
+    exercises: ['New Exercise']
+  };
+
+  state.routines.push(newRoutine);
+  persistRoutines();
+
+  renderRoutineSelects(elements.routineSelect.value, elements.exerciseSelect.value, newRoutine.id);
+  setRoutineMessage('New workout added. Edit and save it when ready.', 'success');
+  setActiveTab('routinesSection');
+  elements.routineNameInput.focus();
+  elements.routineNameInput.select();
+}
+
+function onDeleteRoutine() {
+  if (state.routines.length <= 1) {
+    setRoutineMessage('At least one workout must remain.', 'error');
+    return;
+  }
+
+  const routineId = elements.routineEditorSelect.value;
+  const routine = getRoutineById(routineId);
+
+  if (!routine) {
+    setRoutineMessage('Select a workout to delete.', 'error');
+    return;
+  }
+
+  if (!confirm(`Delete "${routine.name}"?`)) {
+    return;
+  }
+
+  state.routines = state.routines.filter((item) => item.id !== routineId);
+  persistRoutines();
+
+  const fallbackRoutineId = state.routines[0].id;
+  const nextLogRoutine = elements.routineSelect.value === routineId ? fallbackRoutineId : elements.routineSelect.value;
+
+  renderRoutineSelects(nextLogRoutine, elements.exerciseSelect.value, fallbackRoutineId);
+  saveDraft();
+
+  if (state.apiBaseUrl) {
+    onExerciseChange().catch((error) => {
+      console.error(error);
+      setFormMessage(error.message || 'Failed to refresh exercise view.', 'error');
+    });
+  }
+
+  setRoutineMessage('Workout deleted.', 'success');
+}
+
+function onResetRoutines() {
+  if (!confirm('Reset all workouts to the original defaults?')) {
+    return;
+  }
+
+  state.routines = cloneDefaultRoutines();
+  persistRoutines();
+
+  renderRoutineSelects(state.routines[0].id, '', state.routines[0].id);
+  saveDraft();
+
+  if (state.apiBaseUrl) {
+    onExerciseChange().catch((error) => {
+      console.error(error);
+      setFormMessage(error.message || 'Failed to refresh exercise view.', 'error');
+    });
+  }
+
+  setRoutineMessage('Workouts reset to defaults.', 'success');
+}
+
+function populateRoutineEditor(routineId) {
+  const routine = getRoutineById(routineId);
+  if (!routine) {
+    elements.routineNameInput.value = '';
+    elements.routineExercisesInput.value = '';
+    return;
+  }
+
+  elements.routineNameInput.value = routine.name;
+  elements.routineExercisesInput.value = routine.exercises.join('\n');
+}
+
+function getRoutineById(routineId) {
+  return state.routines.find((routine) => routine.id === routineId) || null;
+}
+
+function loadRoutines() {
+  try {
+    const rawValue = localStorage.getItem(ROUTINES_STORAGE_KEY);
+    if (rawValue) {
+      const parsed = JSON.parse(rawValue);
+      const sanitized = sanitizeRoutines(parsed);
+      if (sanitized.length) {
+        return sanitized;
+      }
+    }
+  } catch (_) {
+    // Ignore malformed storage value.
+  }
+
+  const defaults = cloneDefaultRoutines();
+  persistRoutines(defaults);
+  return defaults;
+}
+
+function sanitizeRoutines(rawRoutines) {
+  if (!Array.isArray(rawRoutines)) {
+    return [];
+  }
+
+  const routines = [];
+  const usedIds = new Set();
+
+  rawRoutines.forEach((item, index) => {
+    const name = sanitizeRoutineName(item?.name);
+    const exercises = parseExerciseList(item?.exercises);
+
+    if (!name || !exercises.length) {
+      return;
+    }
+
+    let id = sanitizeRoutineId(item?.id);
+    if (!id || usedIds.has(id)) {
+      id = buildRoutineId(`${name}-${index + 1}`, usedIds);
+    }
+
+    usedIds.add(id);
+    routines.push({ id, name, exercises });
+  });
+
+  return routines;
+}
+
+function persistRoutines(routines = state.routines) {
+  try {
+    localStorage.setItem(ROUTINES_STORAGE_KEY, JSON.stringify(routines));
+  } catch (_) {
+    // Ignore storage write failures.
+  }
+}
+
+function parseExerciseList(rawValue) {
+  const lines = Array.isArray(rawValue) ? rawValue : String(rawValue || '').split('\n');
+  const unique = [];
+  const seen = new Set();
+
+  lines.forEach((line) => {
+    const normalizedName = sanitizeExerciseName(line);
+    if (!normalizedName) {
+      return;
+    }
+
+    const key = normalizeKey(normalizedName);
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    unique.push(normalizedName);
+  });
+
+  return unique;
+}
+
+function findExerciseMatch(exercises, targetExerciseName) {
+  const targetKey = normalizeKey(targetExerciseName);
+  if (!targetKey) {
+    return '';
+  }
+
+  return exercises.find((exercise) => normalizeKey(exercise) === targetKey) || '';
+}
+
+function sanitizeExerciseName(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function sanitizeRoutineName(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 80);
+}
+
+function sanitizeRoutineId(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function buildRoutineId(seed, usedIds = new Set(state.routines.map((routine) => routine.id))) {
+  const base =
+    String(seed || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || 'workout';
+
+  let suffix = 1;
+  let candidate = base;
+
+  while (usedIds.has(candidate)) {
+    suffix += 1;
+    candidate = `${base}-${suffix}`;
+  }
+
+  return candidate;
+}
+
+function cloneDefaultRoutines() {
+  return DEFAULT_ROUTINES.map((routine) => ({
+    id: routine.id,
+    name: routine.name,
+    exercises: [...routine.exercises]
+  }));
+}
+
+function normalizeKey(value) {
+  return sanitizeExerciseName(value).toLowerCase();
+}
+
 function setActiveTab(tabId) {
   elements.tabs.forEach((tab) => {
     tab.classList.toggle('active', tab.dataset.tab === tabId);
@@ -443,16 +835,23 @@ function setFormMessage(message, type) {
   elements.formMessage.className = `message ${type || ''}`.trim();
 }
 
+function setRoutineMessage(message, type) {
+  elements.routineMessage.textContent = message;
+  elements.routineMessage.className = `message ${type || ''}`.trim();
+}
+
 function saveDraft() {
   try {
     const draft = {
-      exerciseName: elements.exerciseInput.value.trim(),
+      routineId: elements.routineSelect.value,
+      exerciseName: elements.exerciseSelect.value,
       workoutDate: elements.workoutDate.value || formatLocalDate(new Date()),
       sets: getSetRows().map((row) => ({
         reps: row.querySelector('.reps-input').value.trim(),
         weight: row.querySelector('.weight-input').value.trim()
       }))
     };
+
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
   } catch (_) {
     // Ignore storage errors.
@@ -468,15 +867,18 @@ function restoreDraft() {
 
     const draft = JSON.parse(raw);
     const workoutDate = sanitizeDraftField(draft.workoutDate);
-    const exerciseName = sanitizeDraftField(draft.exerciseName);
+    const routineId = sanitizeRoutineId(draft.routineId);
+    const exerciseName = sanitizeExerciseName(draft.exerciseName);
 
     if (/^\d{4}-\d{2}-\d{2}$/.test(workoutDate)) {
       elements.workoutDate.value = workoutDate;
     }
 
-    if (exerciseName) {
-      elements.exerciseInput.value = exerciseName;
+    if (getRoutineById(routineId)) {
+      elements.routineSelect.value = routineId;
     }
+
+    renderExerciseOptions(exerciseName);
 
     if (Array.isArray(draft.sets) && draft.sets.length) {
       resetSetRows(

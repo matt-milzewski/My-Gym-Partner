@@ -64,32 +64,22 @@ label {
   font-weight: 600;
 }
 
-input {
+input,
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 0.4rem;
   padding: 0.55rem;
   margin-bottom: 0.7rem;
   font-size: 0.95rem;
+  font-family: inherit;
 }
 
-.quick-picks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.chip {
-  border: 1px solid var(--border);
-  background: #fff;
-  border-radius: 999px;
-  padding: 0.4rem 0.65rem;
-  font-size: 0.9rem;
-  cursor: pointer;
-}
-
-.chip:active {
-  transform: translateY(1px);
+textarea {
+  min-height: 10.5rem;
+  resize: vertical;
+  line-height: 1.4;
 }
 
 .section-title {
@@ -99,7 +89,7 @@ input {
 
 .tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
@@ -110,6 +100,7 @@ input {
   background: #fff;
   padding: 0.55rem;
   font-weight: 600;
+  text-align: center;
 }
 
 .tab.active {
@@ -238,13 +229,16 @@ button[type="submit"]:hover {
   }
 
   input,
+  select,
+  textarea,
   button,
-  .tab,
-  .chip {
+  .tab {
     font-size: 1rem;
   }
 
-  input {
+  input,
+  select,
+  textarea {
     padding: 0.75rem;
   }
 

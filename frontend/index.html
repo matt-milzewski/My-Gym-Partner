@@ -11,15 +11,17 @@
       <h1>Gym Workout Tracker</h1>
 
       <section class="panel">
-        <label for="exerciseInput">Exercise</label>
-        <input id="exerciseInput" list="exerciseSuggestions" placeholder="e.g. Bench Press" autocomplete="off" />
-        <datalist id="exerciseSuggestions"></datalist>
-        <div id="exerciseQuickPicks" class="quick-picks" aria-label="Recent exercises"></div>
+        <label for="routineSelect">Workout</label>
+        <select id="routineSelect" required></select>
+
+        <label for="exerciseSelect">Exercise</label>
+        <select id="exerciseSelect" required></select>
       </section>
 
       <nav class="tabs">
         <button class="tab active" data-tab="logSection" type="button">Log</button>
         <button class="tab" data-tab="historySection" type="button">History + Stats</button>
+        <button class="tab" data-tab="routinesSection" type="button">Workouts</button>
       </nav>
 
       <section id="logSection" class="panel tab-panel active">
@@ -51,6 +53,33 @@
 
         <h2>History</h2>
         <ul id="historyList" class="history-list"></ul>
+      </section>
+
+      <section id="routinesSection" class="panel tab-panel">
+        <h2>Workout Editor</h2>
+        <p class="meta">Change workout names, edit exercise lists, or add a new workout.</p>
+
+        <label for="routineEditorSelect">Workout to edit</label>
+        <select id="routineEditorSelect"></select>
+
+        <label for="routineNameInput">Workout name</label>
+        <input id="routineNameInput" type="text" maxlength="80" placeholder="e.g. Day 1 - Push" />
+
+        <label for="routineExercisesInput">Exercises (one per line)</label>
+        <textarea
+          id="routineExercisesInput"
+          rows="10"
+          placeholder="Barbell Bench Press&#10;Incline Dumbbell Press&#10;..."
+        ></textarea>
+
+        <div class="quick-actions">
+          <button id="saveRoutineBtn" type="button">Save workout</button>
+          <button id="addRoutineBtn" type="button">Add workout</button>
+          <button id="deleteRoutineBtn" type="button">Delete workout</button>
+          <button id="resetRoutinesBtn" type="button">Reset defaults</button>
+        </div>
+
+        <p id="routineMessage" class="message" aria-live="polite"></p>
       </section>
     </main>
 
